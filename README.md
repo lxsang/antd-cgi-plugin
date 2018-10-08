@@ -21,7 +21,7 @@ mkdir antd
 cd antd
 wget -O- https://get.makeand.run/antd | bash -s "cgi"
 ```
-The script will ask you where you want to put the binaries (should be an absolute path, otherwise the build will fail) and the default HTTP port for the server config.
+The script will ask you for a place to put the binaries (should be an absolute path, otherwise the build will fail) and the default HTTP port for the server config.
 
 ## Example of using PHP-CGI with Antd
 Make sure **php-cgi** is installed on your system.
