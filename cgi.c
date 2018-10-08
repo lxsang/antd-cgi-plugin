@@ -1,12 +1,42 @@
+#include <sys/wait.h>
 #include "plugin.h"
+#include "ini.h"
+dictionary cgi_bin = NULL;
+
+static int ini_handle(void *user_data, const char *section, const char *name,
+						  const char *value)
+{
+    UNUSED(user_data);
+	if (EQU(section, "CGI"))
+	{
+		dput(cgi_bin, name, strdup(value));
+        LOG("put %s for %s\n", value, name);
+	}
+    else
+    {
+        return 0;
+    }
+    return 1;
+}
 
 void init()
 {
-
+    use_raw_body();
+    cgi_bin = dict();
+    char* cnf = config_dir();
+    char* file = __s("%s/cgi.ini", cnf);
+    // read ini file
+    if (ini_parse(file, ini_handle, NULL) < 0)
+	{
+		LOG("Can't load '%s'\n", file);
+	}
+    free(cnf);
+    free(file);
 }
 void destroy()
 {
-
+    if(cgi_bin)
+        freedict(cgi_bin);
 }
 
 static void add_vars(list* l, char* k, char* v)
@@ -17,16 +47,46 @@ static void add_vars(list* l, char* k, char* v)
     free(data);
 }
 
-void* handle(void* data)
+static void write_request_body(antd_request_t* rq, int fd)
 {
-    antd_request_t *rq = (antd_request_t *)data;
-    plugin_header_t* __plugin__ = meta();
-	void *cl = (void *)rq->client;
-    antd_task_t* task = NULL; 
-    char* tmp = NULL;
+    char* tmp = (char*)dvalue(rq->request, "METHOD");
+    if(!tmp || EQU(tmp,"GET") || EQU(tmp,"HEAD")) return;
+    int clen = -1;
+    dictionary header = (dictionary) dvalue(rq->request,"REQUEST_HEADER");
+    tmp = (char*)dvalue(header, "Content-Length");
+	if(tmp)
+		clen = atoi(tmp);
+    if(clen == -1) return;
+    // read data and write to the fd
+    char buf[BUFFLEN];
+    int readlen = clen > BUFFLEN?BUFFLEN:clen;
+	int read = 0, stat = 1;
+	while(readlen > 0 && stat > 0)
+	{
+		stat = antd_recv(rq->client, buf, readlen);
+		if(stat > 0)
+		{
+			read += stat;
+			readlen = (clen - read) > BUFFLEN?BUFFLEN:(clen-read);
+            write(fd, buf, stat);
+		}
+	}
+}
+static char * get_cgi_bin(antd_request_t* rq)
+{
+    char* tmp = (char*)dvalue(rq->request, "RESOURCE_PATH");
+    if(!tmp) return NULL;
+    tmp = ext(tmp);
+    if(!tmp) return NULL;
+    char* bin =  (char*)dvalue(cgi_bin,tmp);
+    free(tmp);
+    return bin;
+}
+static list get_env_vars(antd_request_t* rq)
+{
+     char* tmp = NULL;
     char* sub = NULL;
-    task = antd_create_task(NULL, data, NULL);
-    task->priority++;
+    plugin_header_t* __plugin__ = meta();
     dictionary request = (dictionary) rq->request;
     dictionary header = (dictionary) dvalue(rq->request,"REQUEST_HEADER");
     list env_vars = list_init();
@@ -102,6 +162,32 @@ void* handle(void* data)
         add_vars(&env_vars, "PATH_TRANSLATED", "");
         add_vars(&env_vars, "SCRIPT_NAME", "");
     }
+    // redirect status for php
+    add_vars(&env_vars,"REDIRECT_STATUS","200");
+    return env_vars;
+}
+
+void* handle(void* data)
+{
+    antd_request_t *rq = (antd_request_t *)data;
+	void *cl = (void *)rq->client;
+    pid_t pid = 0, wpid;
+    int inpipefd[2];
+    int outpipefd[2];
+    char buf[BUFFLEN];
+    int status;
+    antd_task_t* task = NULL; 
+    task = antd_create_task(NULL, data, NULL);
+    task->priority++;
+    list env_vars = NULL;
+    char* bin  = get_cgi_bin(rq);
+    if(!bin)
+    {
+        LOG("No cgi bin found\n");
+        unknow(cl);
+        return task;
+    }
+    env_vars = get_env_vars(rq);
     // now exec the cgi bin
     item np = env_vars;
     int size = list_size(env_vars);
@@ -114,14 +200,7 @@ void* handle(void* data)
         np = np->next;
         i++;
 	}
-    /*
-    pid_t pid = 0;
-    int inpipefd[2];
-    int outpipefd[2];
-    char buf[256];
-    char msg[256];
-    int status;
-
+    // PIPE
     pipe(inpipefd);
     pipe(outpipefd);
     pid = fork();
@@ -134,50 +213,34 @@ void* handle(void* data)
 
         //ask kernel to deliver SIGTERM in case the parent dies
         //prctl(PR_SET_PDEATHSIG, SIGTERM);
-
-        //replace tee with your process
-        execve("printenv > env.txt", NULL, envs);
-        free(envs);
-        list_free(&env_vars);
+        char *argv[] = { bin, 0 };
+        execve(argv[0], &argv[0], envs);
         // Nothing below this line should be executed by child process. If so, 
         // it means that the execl function wasn't successfull, so lets exit:
         _exit(1);
     }
-    // The code below will be executed only by parent. You can write and read
-    // from the child using pipefd descriptors, and you can send signals to 
-    // the process using its pid by kill() function. If the child process will
-    // exit unexpectedly, the parent process will obtain SIGCHLD signal that
-    // can be handled (e.g. you can respawn the child process).
+    // The code below will be executed only by parent.
 
     //close unused pipe ends
     close(outpipefd[0]);
     close(inpipefd[1]);
 
-    // Now, you can write to outpipefd[1] and read from inpipefd[0] :  
-    while(1)
-    {
-        printf("Enter message to send\n");
-        scanf("%s", msg);
-        if(strcmp(msg, "exit") == 0) break;
-
-        write(outpipefd[1], msg, strlen(msg));
-        int r = read(inpipefd[0], buf, 256);
+    // Now, we can write to outpipefd[1] and read from inpipefd[0] :
+    write_request_body(rq, outpipefd[1]);  
+    LOG("Wait for respond\n");
+    set_status(cl, 200, "OK");
+    wpid = 0;
+    
+    do {
+        memset(buf, 0, sizeof(buf));
+        int r = read(inpipefd[0], buf, BUFFLEN-1);
         if(r > 0)
         {
-            printf("Received answer: %s\n", buf);
-
+            __t(cl, buf);
         }
-    }
-
-    //kill(pid, SIGKILL); //send SIGKILL signal to the child process
-    waitpid(pid, &status, 0);*/
-    //char *argv[] = { "printenv > /Users/mrsang/Documents/build/www/env.txt", 0 };
-    //execve(argv[0],&argv[0], envs);
-    char *argv[] = { "/usr/local/bin/php-cgi", 0 };
-    execve(argv[0], &argv[0], envs);
-
+        wpid = waitpid(pid, &status, WNOHANG);
+    } while(wpid == 0);
     free(envs);
     list_free(&env_vars);
-    unimplemented(cl);
     return task;
 }

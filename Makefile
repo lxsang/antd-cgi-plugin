@@ -9,7 +9,7 @@ PLUGINSDEP = 	$(OBJS) \
 				cgi.o
 
 		
-PLUGINLIBS = libantd.$(EXT) -lvncclient  -lpthread -lz -ljpeg# -lsqlite3 
+PLUGINLIBS = libantd.$(EXT)
 				
 PCFLAGS=-W -Wall -g -D DEBUG  $(PPF_FLAG) 
  
