@@ -54,7 +54,7 @@ php=/usr/bin/php-cgi
 ; enable other scripting language using <file extension>=<script-bin CGI>
 ```
 
-To run the Antd server with the **cgi** plugin:
+To run Antd server with the **cgi** plugin:
 ```sh
 /path/to/your/build/antd
 ```
