@@ -84,6 +84,7 @@ static char *get_cgi_bin(antd_request_t *rq)
     if (!tmp)
         return NULL;
     char *bin = (char *)dvalue(cgi_bin, tmp);
+    LOG("CGI  CMD: %s\n", bin);
     free(tmp);
     return bin;
 }
@@ -183,7 +184,7 @@ void *handle(void *data)
     char buf[BUFFLEN];
     int status;
     antd_task_t *task = NULL;
-    task = antd_create_task(NULL, data, NULL);
+    task = antd_create_task(NULL, data, NULL,rq->client->last_io);
     task->priority++;
     list env_vars = NULL;
     char *bin = get_cgi_bin(rq);
