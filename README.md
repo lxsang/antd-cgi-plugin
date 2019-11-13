@@ -2,8 +2,7 @@
 CGI interface support for [Antd server](https://github.com/lxsang/ant-http)
 
 ## Build from source
-As **cgi** is an **Antd's** plugin, it need to be built along with the server. This require the following application/libraries to be pre installed:
-
+As **cgi** is an **Antd's** plugin, The server must be pre-installed
 ### build dep
 * git
 * make
@@ -20,6 +19,13 @@ When all dependencies are installed, the build can be done with a few single com
 mkdir antd
 cd antd
 wget -O- https://get.bitdojo.dev/antd_plugin | bash -s "cgi"
+
+# or from the tarball distribution in dist/
+tar xvzf cgi-x.x.x.tar.gz
+cd cgi-x.x.x
+./configure --prefix=/opt/www --enable-debug=yes
+make
+sudo make install
 ```
 The script will ask you for a place to put the binaries (should be an absolute path, otherwise the build will fail) and the default HTTP port for the server config.
 
@@ -61,7 +67,7 @@ To run Antd server with the **cgi** plugin:
 
 **php** Web applications can be put on **/path/to/your/build/htdocs**
 
-### Generte distribution
+### Generate distribution
 ```sh
 libtoolize
 aclocal
