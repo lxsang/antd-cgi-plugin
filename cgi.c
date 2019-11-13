@@ -1,6 +1,6 @@
 #include <sys/wait.h>
-#include "plugin.h"
-#include "ini.h"
+#include "antd/plugin.h"
+#include "antd/ini.h"
 dictionary cgi_bin = NULL;
 
 static int ini_handle(void *user_data, const char *section, const char *name,
@@ -29,6 +29,10 @@ void init()
     if (ini_parse(file, ini_handle, NULL) < 0)
     {
         LOG("Can't load '%s'\n", file);
+    }
+    else
+    {
+        LOG("CGI config loaded\n");
     }
     free(cnf);
     free(file);
@@ -184,18 +188,19 @@ void *handle(void *data)
     char buf[BUFFLEN];
     int status;
     antd_task_t *task = NULL;
-    task = antd_create_task(NULL, data, NULL,rq->client->last_io);
-    task->priority++;
     list env_vars = NULL;
     char *bin = get_cgi_bin(rq);
     if (!bin)
     {
         LOG("No cgi bin found\n");
         unknow(cl);
+        task = antd_create_task(NULL, data, NULL,rq->client->last_io);
+        task->priority++;
         return task;
     }
     env_vars = get_env_vars(rq);
     // now exec the cgi bin
+    LOG("Execute the cgi bin\n");
     item np = env_vars;
     int size = list_size(env_vars);
     char **envs = (char **)malloc((size + 1) * sizeof(*envs));
@@ -277,5 +282,7 @@ void *handle(void *data)
     waitpid(pid, &status, 0);
     free(envs);
     list_free(&env_vars);
+    task = antd_create_task(NULL, data, NULL,rq->client->last_io);
+    task->priority++;
     return task;
 }
