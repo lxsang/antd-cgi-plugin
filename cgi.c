@@ -1,5 +1,6 @@
+#define PLUGIN_IMPLEMENT 1
 #include <sys/wait.h>
-#include "antd/plugin.h"
+#include <antd/plugin.h>
 #include "antd/ini.h"
 dictionary cgi_bin = NULL;
 
