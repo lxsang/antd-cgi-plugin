@@ -2,7 +2,7 @@
 #include <sys/wait.h>
 #include <antd/plugin.h>
 #include "antd/ini.h"
-dictionary cgi_bin = NULL;
+dictionary_t cgi_bin = NULL;
 
 static int ini_handle(void *user_data, const char *section, const char *name,
                       const char *value)
@@ -44,7 +44,7 @@ void destroy()
         freedict(cgi_bin);
 }
 
-static void add_vars(list *l, char *k, char *v)
+static void add_vars(list_t *l, char *k, char *v)
 {
     if (!v || !l || !k)
         return;
@@ -59,7 +59,7 @@ static void write_request_body(antd_request_t *rq, int fd)
     if (!tmp || EQU(tmp, "GET") || EQU(tmp, "HEAD"))
         return;
     int clen = -1;
-    dictionary header = (dictionary)dvalue(rq->request, "REQUEST_HEADER");
+    dictionary_t header = (dictionary_t)dvalue(rq->request, "REQUEST_HEADER");
     tmp = (char *)dvalue(header, "Content-Length");
     if (tmp)
         clen = atoi(tmp);
@@ -93,14 +93,14 @@ static char *get_cgi_bin(antd_request_t *rq)
     free(tmp);
     return bin;
 }
-static list get_env_vars(antd_request_t *rq)
+static list_t get_env_vars(antd_request_t *rq)
 {
     char *tmp = NULL;
     char *sub = NULL;
     plugin_header_t *__plugin__ = meta();
-    dictionary request = (dictionary)rq->request;
-    dictionary header = (dictionary)dvalue(rq->request, "REQUEST_HEADER");
-    list env_vars = list_init();
+    dictionary_t request = (dictionary_t)rq->request;
+    dictionary_t header = (dictionary_t)dvalue(rq->request, "REQUEST_HEADER");
+    list_t env_vars = list_init();
     add_vars(&env_vars, "GATEWAY_INTERFACE", "CGI/1.1");
     add_vars(&env_vars, "SERVER_SOFTWARE", SERVER_NAME);
     tmp = (char *)dvalue(request, "REQUEST_QUERY");
@@ -143,7 +143,7 @@ static list get_env_vars(antd_request_t *rq)
     add_vars(&env_vars, "SERVER_PORT", (char *)dvalue(header, "SERVER_PORT"));
     add_vars(&env_vars, "SERVER_PROTOCOL", "HTTP/1.1");
     // add remaining header to the vars
-    association it;
+    chain_t it;
     for_each_assoc(it, header)
     {
         tmp = __s("HTTP_%s", it->key);
@@ -189,12 +189,12 @@ void *handle(void *data)
     char buf[BUFFLEN];
     int status;
     antd_task_t *task = NULL;
-    list env_vars = NULL;
+    list_t env_vars = NULL;
     char *bin = get_cgi_bin(rq);
     if (!bin)
     {
         LOG("No cgi bin found\n");
-        unknow(cl);
+        antd_error(cl,503, "Service unavailable");
         task = antd_create_task(NULL, data, NULL,rq->client->last_io);
         task->priority++;
         return task;
@@ -202,7 +202,7 @@ void *handle(void *data)
     env_vars = get_env_vars(rq);
     // now exec the cgi bin
     LOG("Execute the cgi bin\n");
-    item np = env_vars;
+    item_t np = env_vars;
     int size = list_size(env_vars);
     char **envs = (char **)malloc((size + 1) * sizeof(*envs));
     envs[size] = NULL;
@@ -241,7 +241,9 @@ void *handle(void *data)
     // Now, we can write to outpipefd[1] and read from inpipefd[0] :
     write_request_body(rq, outpipefd[1]);
 
-    set_status(cl, 200, "OK");
+    const char* stat_str = get_status_str(200);
+	__t(cl, "HTTP/1.1 %d %s", 200, stat_str);
+    //set_status(cl, 200, "OK");
     //wpid = 0;
     //waitpid(pid, &status, 0); // wait for the child finish
     // WNOHANG
