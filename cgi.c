@@ -76,7 +76,7 @@ static void write_request_body(antd_request_t *rq, int fd)
         {
             read += stat;
             readlen = (clen - read) > BUFFLEN ? BUFFLEN : (clen - read);
-            write(fd, buf, stat);
+            UNUSED(write(fd, buf, stat));
         }
     }
 }
@@ -97,7 +97,6 @@ static list_t get_env_vars(antd_request_t *rq)
 {
     char *tmp = NULL;
     char *sub = NULL;
-    plugin_header_t *__plugin__ = meta();
     dictionary_t request = (dictionary_t)rq->request;
     dictionary_t header = (dictionary_t)dvalue(rq->request, "REQUEST_HEADER");
     list_t env_vars = list_init();
@@ -130,7 +129,7 @@ static list_t get_env_vars(antd_request_t *rq)
         add_vars(&env_vars, "CONTENT_LENGTH", tmp);
     else
         add_vars(&env_vars, "CONTENT_LENGTH", "");
-    add_vars(&env_vars, "DOCUMENT_ROOT", __plugin__->htdocs);
+    add_vars(&env_vars, "DOCUMENT_ROOT", rq->client->port_config->htdocs);
     tmp = (char *)dvalue(request, "REQUEST_PATH");
     if (tmp)
         add_vars(&env_vars, "PATH_INFO", tmp);
@@ -163,7 +162,7 @@ static list_t get_env_vars(antd_request_t *rq)
     if (tmp)
     {
         add_vars(&env_vars, "SCRIPT_NAME", tmp);
-        tmp = __s("%s/%s", __plugin__->htdocs, tmp);
+        tmp = __s("%s/%s", rq->client->port_config->htdocs, tmp);
         add_vars(&env_vars, "SCRIPT_FILENAME", tmp);
         add_vars(&env_vars, "PATH_TRANSLATED", tmp);
         free(tmp);
@@ -214,8 +213,8 @@ void *handle(void *data)
         i++;
     }
     // PIPE
-    pipe(inpipefd);
-    pipe(outpipefd);
+    UNUSED(pipe(inpipefd));
+    UNUSED(pipe(outpipefd));
     pid = fork();
     if (pid == 0)
     {
