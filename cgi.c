@@ -49,8 +49,7 @@ static void add_vars(list_t *l, char *k, char *v)
     if (!v || !l || !k)
         return;
     char *data = __s("%s=%s", k, v);
-    list_put_s(l, data);
-    free(data);
+    list_put_ptr(l, data);
 }
 
 static void write_request_body(antd_request_t *rq, int fd)
@@ -208,7 +207,7 @@ void *handle(void *data)
     int i = 0;
     while (np)
     {
-        envs[i] = np->value.s;
+        envs[i] = (char*)np->value.ptr;
         np = np->next;
         i++;
     }
