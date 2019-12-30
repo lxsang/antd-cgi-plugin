@@ -106,6 +106,7 @@ static list_t get_env_vars(antd_request_t *rq)
         add_vars(&env_vars, "QUERY_STRING", "");
     else
     {
+        add_vars(&env_vars, "REQUEST_URI", tmp);
         sub = strchr(tmp, '?');
         if (sub)
         {
@@ -131,7 +132,18 @@ static list_t get_env_vars(antd_request_t *rq)
     add_vars(&env_vars, "DOCUMENT_ROOT", rq->client->port_config->htdocs);
     tmp = (char *)dvalue(request, "REQUEST_PATH");
     if (tmp)
-        add_vars(&env_vars, "PATH_INFO", tmp);
+    {
+        sub = tmp;
+        while(*sub == '/') sub++;
+        if(sub)
+        {
+            add_vars(&env_vars, "PATH_INFO", sub);
+        }
+        else
+        {
+            add_vars(&env_vars, "PATH_INFO", "");
+        }
+    }
     else
         add_vars(&env_vars, "PATH_INFO", "");
     tmp = (char *)dvalue(header, "REMOTE_ADDR");
@@ -245,7 +257,7 @@ void *handle(void *data)
     //wpid = 0;
     //waitpid(pid, &status, 0); // wait for the child finish
     // WNOHANG
-    while (1)
+    while ( waitpid(pid, &status, WNOHANG) == 0)
     {
         memset(buf, 0, sizeof(buf));
         ssize_t count = read(inpipefd[0], buf, BUFFLEN);
@@ -257,30 +269,23 @@ void *handle(void *data)
             }
             else
             {
+                //perror("read");
                 break;
             }
         }
         else if (count == 0)
         {
-            break;
+           continue;
         }
         else
         {
             antd_send(cl, buf, count);
+            //printf("sent: %d with count: %d\n", sent, count);
         }
     }
-    /*
-    do {
-        memset(buf, 0, sizeof(buf));
-        int r = read(inpipefd[0], buf, BUFFLEN-1);
-        if(r > 0)
-        {
-            __t(cl, buf);
-        }
-    } while(wpid == 0);
-    */
-    kill(pid, SIGKILL);
-    waitpid(pid, &status, 0);
+    //kill(pid, SIGKILL);
+    //waitpid(pid, &status, 0);
+    //printf("End cgi\n");
     free(envs);
     list_free(&env_vars);
     task = antd_create_task(NULL, data, NULL,rq->client->last_io);
