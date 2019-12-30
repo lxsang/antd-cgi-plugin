@@ -2,6 +2,9 @@
 #include <sys/wait.h>
 #include <antd/plugin.h>
 #include "antd/ini.h"
+
+#define MAX_ENV_SIZE 512
+
 dictionary_t cgi_bin = NULL;
 
 static int ini_handle(void *user_data, const char *section, const char *name,
@@ -189,6 +192,28 @@ static list_t get_env_vars(antd_request_t *rq)
     return env_vars;
 }
 
+
+int read_line(int fn, char*buf,int size)
+{
+	int i = 0;
+	char c = '\0';
+	int n;
+	while ((i < size - 1) && (c != '\n'))
+	{
+		n = read(fn, &c,1);
+		if (n > 0)
+		{
+			//LOG("Data : %c\n", c);
+			buf[i] = c;
+			i++;
+		}
+		else
+			c = '\n';
+	}
+	buf[i] = '\0';
+	return i;
+}
+
 void *handle(void *data)
 {
     antd_request_t *rq = (antd_request_t *)data;
@@ -213,16 +238,17 @@ void *handle(void *data)
     // now exec the cgi bin
     LOG("Execute the cgi bin\n");
     item_t np = env_vars;
-    int size = list_size(env_vars);
-    char **envs = (char **)malloc((size + 1) * sizeof(*envs));
-    envs[size] = NULL;
+    char* envs[MAX_ENV_SIZE];
     int i = 0;
     while (np)
     {
         envs[i] = (char*)np->value.ptr;
         np = np->next;
         i++;
+        if(i == MAX_ENV_SIZE - 1)
+            break;
     }
+    envs[i] = NULL;
     // PIPE
     UNUSED(pipe(inpipefd));
     UNUSED(pipe(outpipefd));
@@ -252,15 +278,19 @@ void *handle(void *data)
     write_request_body(rq, outpipefd[1]);
 
     const char* stat_str = get_status_str(200);
-	__t(cl, "HTTP/1.1 %d %s", 200, stat_str);
     //set_status(cl, 200, "OK");
     //wpid = 0;
     //waitpid(pid, &status, 0); // wait for the child finish
     // WNOHANG
+    int beg = 1;
+    regmatch_t matches[2];
+    char statusbuf[100];
+    char* sub = NULL;
+	memset(statusbuf, '\0', sizeof(statusbuf));
     while ( waitpid(pid, &status, WNOHANG) == 0)
     {
         memset(buf, 0, sizeof(buf));
-        ssize_t count = read(inpipefd[0], buf, BUFFLEN);
+        ssize_t count = read(inpipefd[0], buf, BUFFLEN - 1);
         if (count == -1)
         {
             if (errno == EINTR)
@@ -279,7 +309,23 @@ void *handle(void *data)
         }
         else
         {
-            antd_send(cl, buf, count);
+            sub = buf;
+            if(beg)
+            {
+                if(regex_match("\\s*Status\\s*:\\s+([0-9]{3}\\s+[a-zA-Z0-9 ]*)",buf,2,matches))
+                {
+                    memcpy(statusbuf, buf + matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
+                    sub = buf + matches[1].rm_eo + 2;
+                    count -= matches[1].rm_eo + 2;
+                    __t(cl, "HTTP/1.1 %s", statusbuf);
+                }
+                else
+                {
+                    __t(cl, "HTTP/1.1 %d %s", 200, stat_str);
+                }
+                beg = 0;
+            }
+            antd_send(cl, sub, count);
             //printf("sent: %d with count: %d\n", sent, count);
         }
     }
