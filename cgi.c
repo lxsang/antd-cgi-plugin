@@ -14,7 +14,7 @@ static int ini_handle(void *user_data, const char *section, const char *name,
     if (EQU(section, "CGI"))
     {
         dput(cgi_bin, name, strdup(value));
-        LOG("put %s for %s\n", value, name);
+        LOG("put %s for %s", value, name);
     }
     else
     {
@@ -32,11 +32,11 @@ void init()
     // read ini file
     if (ini_parse(file, ini_handle, NULL) < 0)
     {
-        LOG("Can't load '%s'\n", file);
+        ERROR("Can't load '%s'", file);
     }
     else
     {
-        LOG("CGI config loaded\n");
+        LOG("CGI config loaded");
     }
     free(cnf);
     free(file);
@@ -91,7 +91,7 @@ static char *get_cgi_bin(antd_request_t *rq)
     if (!tmp)
         return NULL;
     char *bin = (char *)dvalue(cgi_bin, tmp);
-    LOG("CGI  CMD: %s\n", bin);
+    LOG("CGI  CMD: %s", bin);
     free(tmp);
     return bin;
 }
@@ -208,9 +208,14 @@ int read_line(int fn, char*buf,int size)
 			i++;
 		}
 		else
-			c = '\n';
+        {
+            if(i == 0)
+                i = n;
+            c = '\n';
+        }
 	}
-	buf[i] = '\0';
+    if(i >= 0)
+	    buf[i] = '\0';
 	return i;
 }
 
@@ -290,7 +295,15 @@ void *handle(void *data)
     while ( waitpid(pid, &status, WNOHANG) == 0)
     {
         memset(buf, 0, sizeof(buf));
-        ssize_t count = read(inpipefd[0], buf, BUFFLEN - 1);
+        ssize_t count;
+        if(beg)
+        {
+            count = read_line(inpipefd[0], buf, BUFFLEN);
+        }
+        else
+        {
+            count = read(inpipefd[0], buf, BUFFLEN);
+        }
         if (count == -1)
         {
             if (errno == EINTR)
@@ -312,6 +325,11 @@ void *handle(void *data)
             sub = buf;
             if(beg)
             {
+                if(!regex_match("^[a-zA-Z0-9\\-]+\\s*:\\s*.*$",buf,0,NULL))
+                {
+                    LOG("<CGI invalid header> %s", buf);
+                    continue;
+                }
                 if(regex_match("\\s*Status\\s*:\\s+([0-9]{3}\\s+[a-zA-Z0-9 ]*)",buf,2,matches))
                 {
                     memcpy(statusbuf, buf + matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
@@ -326,13 +344,11 @@ void *handle(void *data)
                 beg = 0;
             }
             antd_send(cl, sub, count);
-            //printf("sent: %d with count: %d\n", sent, count);
         }
     }
     //kill(pid, SIGKILL);
     //waitpid(pid, &status, 0);
     //printf("End cgi\n");
-    free(envs);
     list_free(&env_vars);
     task = antd_create_task(NULL, data, NULL,rq->client->last_io);
     task->priority++;
