@@ -3,9 +3,15 @@
 #include <antd/plugin.h>
 #include "antd/ini.h"
 
-#define MAX_ENV_SIZE 512
+#define MAX_ENV_SIZE 100
 
 dictionary_t cgi_bin = NULL;
+
+
+typedef struct {
+    int size;
+    char* env[MAX_ENV_SIZE];
+} envar_arr_t;
 
 static int ini_handle(void *user_data, const char *section, const char *name,
                       const char *value)
@@ -47,12 +53,16 @@ void destroy()
         freedict(cgi_bin);
 }
 
-static void add_vars(list_t *l, char *k, char *v)
+static void add_vars(envar_arr_t *l, char *k, char *v)
 {
     if (!v || !l || !k)
         return;
+    if(l->size >= MAX_ENV_SIZE-1)
+        return;
     char *data = __s("%s=%s", k, v);
-    list_put_ptr(l, data);
+    l->env[l->size] = data;
+    l->size++;
+    //list_put_ptr(l, data);
 }
 
 static void write_request_body(antd_request_t *rq, int fd)
@@ -95,44 +105,43 @@ static char *get_cgi_bin(antd_request_t *rq)
     free(tmp);
     return bin;
 }
-static list_t get_env_vars(antd_request_t *rq)
+static void get_env_vars(antd_request_t *rq, envar_arr_t* env_vars)
 {
     char *tmp = NULL;
     char *sub = NULL;
     dictionary_t request = (dictionary_t)rq->request;
     dictionary_t header = (dictionary_t)dvalue(rq->request, "REQUEST_HEADER");
-    list_t env_vars = list_init();
-    add_vars(&env_vars, "GATEWAY_INTERFACE", "CGI/1.1");
-    add_vars(&env_vars, "SERVER_SOFTWARE", SERVER_NAME);
+    add_vars(env_vars, "GATEWAY_INTERFACE", "CGI/1.1");
+    add_vars(env_vars, "SERVER_SOFTWARE", SERVER_NAME);
     tmp = (char *)dvalue(request, "REQUEST_QUERY");
     if (!tmp)
-        add_vars(&env_vars, "QUERY_STRING", "");
+        add_vars(env_vars, "QUERY_STRING", "");
     else
     {
-        add_vars(&env_vars, "REQUEST_URI", tmp);
+        add_vars(env_vars, "REQUEST_URI", tmp);
         sub = strchr(tmp, '?');
         if (sub)
         {
             sub++;
-            add_vars(&env_vars, "QUERY_STRING", sub);
+            add_vars(env_vars, "QUERY_STRING", sub);
         }
         else
-            add_vars(&env_vars, "QUERY_STRING", "");
+            add_vars(env_vars, "QUERY_STRING", "");
     }
     tmp = (char *)dvalue(request, "METHOD");
     if (tmp)
-        add_vars(&env_vars, "REQUEST_METHOD", tmp);
+        add_vars(env_vars, "REQUEST_METHOD", tmp);
     tmp = (char *)dvalue(header, "Content-Type");
     if (tmp)
-        add_vars(&env_vars, "CONTENT_TYPE", tmp);
+        add_vars(env_vars, "CONTENT_TYPE", tmp);
     else
-        add_vars(&env_vars, "CONTENT_TYPE", "");
+        add_vars(env_vars, "CONTENT_TYPE", "");
     tmp = (char *)dvalue(header, "Content-Length");
     if (tmp)
-        add_vars(&env_vars, "CONTENT_LENGTH", tmp);
+        add_vars(env_vars, "CONTENT_LENGTH", tmp);
     else
-        add_vars(&env_vars, "CONTENT_LENGTH", "");
-    add_vars(&env_vars, "DOCUMENT_ROOT", rq->client->port_config->htdocs);
+        add_vars(env_vars, "CONTENT_LENGTH", "");
+    add_vars(env_vars, "DOCUMENT_ROOT", rq->client->port_config->htdocs);
     tmp = (char *)dvalue(request, "REQUEST_PATH");
     if (tmp)
     {
@@ -140,21 +149,21 @@ static list_t get_env_vars(antd_request_t *rq)
         while(*sub == '/') sub++;
         if(sub)
         {
-            add_vars(&env_vars, "PATH_INFO", sub);
+            add_vars(env_vars, "PATH_INFO", sub);
         }
         else
         {
-            add_vars(&env_vars, "PATH_INFO", "");
+            add_vars(env_vars, "PATH_INFO", "");
         }
     }
     else
-        add_vars(&env_vars, "PATH_INFO", "");
+        add_vars(env_vars, "PATH_INFO", "");
     tmp = (char *)dvalue(header, "REMOTE_ADDR");
-    add_vars(&env_vars, "REMOTE_ADDR", tmp);
-    add_vars(&env_vars, "REMOTE_HOST", tmp);
-    add_vars(&env_vars, "SERVER_NAME", SERVER_NAME);
-    add_vars(&env_vars, "SERVER_PORT", (char *)dvalue(header, "SERVER_PORT"));
-    add_vars(&env_vars, "SERVER_PROTOCOL", "HTTP/1.1");
+    add_vars(env_vars, "REMOTE_ADDR", tmp);
+    add_vars(env_vars, "REMOTE_HOST", tmp);
+    add_vars(env_vars, "SERVER_NAME", SERVER_NAME);
+    add_vars(env_vars, "SERVER_PORT", (char *)dvalue(header, "SERVER_PORT"));
+    add_vars(env_vars, "SERVER_PROTOCOL", "HTTP/1.1");
     // add remaining header to the vars
     chain_t it;
     for_each_assoc(it, header)
@@ -169,27 +178,26 @@ static list_t get_env_vars(antd_request_t *rq)
                 *s = toupper((char)*s);
             s++;
         }
-        add_vars(&env_vars, tmp, (char *)it->value);
+        add_vars(env_vars, tmp, (char *)it->value);
         free(tmp);
     }
     tmp = (char *)dvalue(request, "RESOURCE_PATH");
     if (tmp)
     {
-        add_vars(&env_vars, "SCRIPT_NAME", tmp);
+        add_vars(env_vars, "SCRIPT_NAME", tmp);
         tmp = __s("%s/%s", rq->client->port_config->htdocs, tmp);
-        add_vars(&env_vars, "SCRIPT_FILENAME", tmp);
-        add_vars(&env_vars, "PATH_TRANSLATED", tmp);
+        add_vars(env_vars, "SCRIPT_FILENAME", tmp);
+        add_vars(env_vars, "PATH_TRANSLATED", tmp);
         free(tmp);
     }
     else
     {
-        add_vars(&env_vars, "SCRIPT_FILENAME", "");
-        add_vars(&env_vars, "PATH_TRANSLATED", "");
-        add_vars(&env_vars, "SCRIPT_NAME", "");
+        add_vars(env_vars, "SCRIPT_FILENAME", "");
+        add_vars(env_vars, "PATH_TRANSLATED", "");
+        add_vars(env_vars, "SCRIPT_NAME", "");
     }
     // redirect status for php
-    add_vars(&env_vars, "REDIRECT_STATUS", "200");
-    return env_vars;
+    add_vars(env_vars, "REDIRECT_STATUS", "200");
 }
 
 
@@ -226,34 +234,16 @@ void *handle(void *data)
     pid_t pid = 0;
     int inpipefd[2];
     int outpipefd[2];
-    char buf[BUFFLEN];
-    int status;
-    antd_task_t *task = NULL;
-    list_t env_vars = NULL;
     char *bin = get_cgi_bin(rq);
+    antd_task_t *task = NULL;
     if (!bin)
     {
-        LOG("No cgi bin found\n");
+        LOG("No cgi bin found");
         antd_error(cl,503, "Service unavailable");
         task = antd_create_task(NULL, data, NULL,rq->client->last_io);
         task->priority++;
         return task;
     }
-    env_vars = get_env_vars(rq);
-    // now exec the cgi bin
-    LOG("Execute the cgi bin\n");
-    item_t np = env_vars;
-    char* envs[MAX_ENV_SIZE];
-    int i = 0;
-    while (np)
-    {
-        envs[i] = (char*)np->value.ptr;
-        np = np->next;
-        i++;
-        if(i == MAX_ENV_SIZE - 1)
-            break;
-    }
-    envs[i] = NULL;
     // PIPE
     UNUSED(pipe(inpipefd));
     UNUSED(pipe(outpipefd));
@@ -263,33 +253,42 @@ void *handle(void *data)
         // Child
         dup2(outpipefd[0], STDIN_FILENO);
         dup2(inpipefd[1], STDOUT_FILENO);
-        dup2(inpipefd[1], STDERR_FILENO);
-
+        // we dont wan't error message on stderr on the returned result
+        //dup2(inpipefd[1], STDERR_FILENO);
+        // now exec the cgi bin
+        LOG("Execute the cgi bin");
+        envar_arr_t envs;
+        envs.size = 0;
+        for(int i = 0; i < MAX_ENV_SIZE; i++)
+        {
+            envs.env[i] = NULL;
+        }
+        get_env_vars(rq, &envs);
         //ask kernel to deliver SIGTERM in case the parent dies
         //prctl(PR_SET_PDEATHSIG, SIGTERM);
         char *argv[] = {bin, 0};
-        execve(argv[0], &argv[0], envs);
+        execve(argv[0], &argv[0], envs.env);
         // Nothing below this line should be executed by child process. If so,
         // it means that the execl function wasn't successfull, so lets exit:
         _exit(1);
     }
+
+
+
+
     // The code below will be executed only by parent.
 
+    char buf[BUFFLEN];
+    int status;
     //close unused pipe ends
     close(outpipefd[0]);
     close(inpipefd[1]);
 
     // Now, we can write to outpipefd[1] and read from inpipefd[0] :
     write_request_body(rq, outpipefd[1]);
-
-    const char* stat_str = get_status_str(200);
-    //set_status(cl, 200, "OK");
-    //wpid = 0;
-    //waitpid(pid, &status, 0); // wait for the child finish
-    // WNOHANG
     int beg = 1;
     regmatch_t matches[2];
-    char statusbuf[100];
+    char statusbuf[256];
     char* sub = NULL;
 	memset(statusbuf, '\0', sizeof(statusbuf));
     while ( waitpid(pid, &status, WNOHANG) == 0)
@@ -327,7 +326,6 @@ void *handle(void *data)
             {
                 if(!regex_match("^[a-zA-Z0-9\\-]+\\s*:\\s*.*$",buf,0,NULL))
                 {
-                    LOG("<CGI invalid header> %s", buf);
                     continue;
                 }
                 if(regex_match("\\s*Status\\s*:\\s+([0-9]{3}\\s+[a-zA-Z0-9 ]*)",buf,2,matches))
@@ -339,6 +337,7 @@ void *handle(void *data)
                 }
                 else
                 {
+                    const char* stat_str = get_status_str(200);
                     __t(cl, "HTTP/1.1 %d %s", 200, stat_str);
                 }
                 beg = 0;
@@ -348,8 +347,6 @@ void *handle(void *data)
     }
     //kill(pid, SIGKILL);
     //waitpid(pid, &status, 0);
-    //printf("End cgi\n");
-    list_free(&env_vars);
     task = antd_create_task(NULL, data, NULL,rq->client->last_io);
     task->priority++;
     return task;
