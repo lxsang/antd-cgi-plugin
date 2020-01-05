@@ -342,7 +342,11 @@ void *handle(void *data)
                 }
                 beg = 0;
             }
-            antd_send(cl, sub, count);
+            int cnt = antd_send(cl, sub, count);
+            if(cnt != count)
+            {
+                ERROR("Cannot sent the entire data %d vs %d\n", cnt, count);
+            }
         }
     }
     //kill(pid, SIGKILL);
