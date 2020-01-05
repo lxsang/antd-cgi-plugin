@@ -290,11 +290,28 @@ void *handle(void *data)
     regmatch_t matches[2];
     char statusbuf[256];
     char* sub = NULL;
+    //fd_set rfd;
+    //struct timeval timeout;
 	memset(statusbuf, '\0', sizeof(statusbuf));
-    while ( waitpid(pid, &status, WNOHANG) == 0)
+    while (1)
     {
-        memset(buf, 0, sizeof(buf));
         ssize_t count;
+        /*FD_ZERO(&rfd);
+        FD_SET(inpipefd[0], &rfd);
+        timeout.tv_sec = 0;
+        timeout.tv_usec = 500;
+        count = select(inpipefd[0]+1, &rfd, NULL, NULL, &timeout);
+        if(count == 0)
+        {
+            continue;
+        }
+        if(count == -1)
+        {
+            ERROR("select: %s", strerror(errno));
+            break;
+        }*/
+        // there is data comming
+        memset(buf, 0, sizeof(buf));
         if(beg)
         {
             count = read_line(inpipefd[0], buf, BUFFLEN);
@@ -311,12 +328,16 @@ void *handle(void *data)
             }
             else
             {
-                //perror("read");
+                ERROR("Read: %s", strerror(errno));
                 break;
             }
         }
         else if (count == 0)
         {
+            if(waitpid(pid, &status, WNOHANG) != 0)
+            {
+                break;
+            }
            continue;
         }
         else
@@ -345,11 +366,11 @@ void *handle(void *data)
             int cnt = antd_send(cl, sub, count);
             if(cnt != count)
             {
-                ERROR("Cannot sent the entire data %d vs %d\n", cnt, count);
+                ERROR("Cannot sent the entire data %d vs %d", cnt, count);
             }
         }
     }
-    //kill(pid, SIGKILL);
+    kill(pid, SIGKILL);
     //waitpid(pid, &status, 0);
     task = antd_create_task(NULL, data, NULL,rq->client->last_io);
     task->priority++;
