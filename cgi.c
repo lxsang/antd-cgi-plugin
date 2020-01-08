@@ -109,10 +109,12 @@ static void get_env_vars(antd_request_t *rq, envar_arr_t* env_vars)
 {
     char *tmp = NULL;
     char *sub = NULL;
+    char* root;
     dictionary_t request = (dictionary_t)rq->request;
     dictionary_t header = (dictionary_t)dvalue(rq->request, "REQUEST_HEADER");
     add_vars(env_vars, "GATEWAY_INTERFACE", "CGI/1.1");
     add_vars(env_vars, "SERVER_SOFTWARE", SERVER_NAME);
+    root = (char*)dvalue(header, "SERVER_WWW_ROOT");
     tmp = (char *)dvalue(request, "REQUEST_QUERY");
     if (!tmp)
         add_vars(env_vars, "QUERY_STRING", "");
@@ -141,7 +143,7 @@ static void get_env_vars(antd_request_t *rq, envar_arr_t* env_vars)
         add_vars(env_vars, "CONTENT_LENGTH", tmp);
     else
         add_vars(env_vars, "CONTENT_LENGTH", "");
-    add_vars(env_vars, "DOCUMENT_ROOT", rq->client->port_config->htdocs);
+    add_vars(env_vars, "DOCUMENT_ROOT", root);
     tmp = (char *)dvalue(request, "REQUEST_PATH");
     if (tmp)
     {
@@ -185,7 +187,7 @@ static void get_env_vars(antd_request_t *rq, envar_arr_t* env_vars)
     if (tmp)
     {
         add_vars(env_vars, "SCRIPT_NAME", tmp);
-        tmp = __s("%s/%s", rq->client->port_config->htdocs, tmp);
+        tmp = __s("%s/%s", root, tmp);
         add_vars(env_vars, "SCRIPT_FILENAME", tmp);
         add_vars(env_vars, "PATH_TRANSLATED", tmp);
         free(tmp);
