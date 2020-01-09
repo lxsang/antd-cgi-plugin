@@ -238,9 +238,9 @@ void *handle(void *data)
     int outpipefd[2];
     char *bin = get_cgi_bin(rq);
     antd_task_t *task = NULL;
-    if (!bin)
+    if (!bin || ws_enable(rq->request))
     {
-        LOG("No cgi bin found");
+        LOG("No cgi bin found or connection is websocket");
         antd_error(cl,503, "Service unavailable");
         task = antd_create_task(NULL, data, NULL,rq->client->last_io);
         task->priority++;
@@ -275,9 +275,6 @@ void *handle(void *data)
         _exit(1);
     }
 
-
-
-
     // The code below will be executed only by parent.
 
     char buf[BUFFLEN];
@@ -288,16 +285,63 @@ void *handle(void *data)
 
     // Now, we can write to outpipefd[1] and read from inpipefd[0] :
     write_request_body(rq, outpipefd[1]);
-    int beg = 1;
-    regmatch_t matches[2];
-    char statusbuf[256];
-    char* sub = NULL;
+    regmatch_t matches[3];
     //fd_set rfd;
     //struct timeval timeout;
-	memset(statusbuf, '\0', sizeof(statusbuf));
+	
+    memset(buf, 0, sizeof(buf));
+    antd_response_header_t rhd;
+    rhd.header = dict();
+    rhd.cookie = list_init();
+    rhd.status = 200;
+    char* k;
+    char* v;
+    int len;
+    ssize_t count;
+   
+    while( read_line(inpipefd[0], buf, BUFFLEN) > 0 && strcmp(buf,"\r\n") != 0)
+    {
+        trim(buf,'\n');
+        trim(buf,'\r');
+        if(regex_match("\\s*Status\\s*:\\s+([0-9]{3})\\s+([a-zA-Z0-9 ]*)",buf,3,matches))
+        {
+            len = matches[1].rm_eo - matches[1].rm_so;
+            k = (char*)malloc(len);
+            memset(k, 0, len);
+            memcpy(k, buf + matches[1].rm_so, len);
+            rhd.status = atoi(k);
+            free(k);
+        }
+        else if(regex_match("^([a-zA-Z0-9\\-]+)\\s*:\\s*(.*)$",buf,3,matches))
+        {
+            len = matches[1].rm_eo - matches[1].rm_so;
+            k = (char*)malloc(len+1);
+            memcpy(k, buf + matches[1].rm_so, len);
+            k[len] = '\0';
+            verify_header(k);
+            len = matches[2].rm_eo - matches[2].rm_so ;
+            v = (char*)malloc(len+1);
+            memcpy(v, buf + matches[2].rm_so, len);
+            v[len] = '\0';
+            if(strcmp(k,"Set-Cookie") == 0)
+            {
+                list_put_ptr(&rhd.cookie,v);
+            }
+            else
+            {
+                dput(rhd.header, k, v);
+            }
+            free(k);
+        }
+        else
+        {
+            LOG("Ignore invalid header: %s", buf);
+        }
+    }
+    antd_send_header(rq->client, &rhd);
+    // send out the rest of data
     while (1)
     {
-        ssize_t count;
         /*FD_ZERO(&rfd);
         FD_SET(inpipefd[0], &rfd);
         timeout.tv_sec = 0;
@@ -313,15 +357,8 @@ void *handle(void *data)
             break;
         }*/
         // there is data comming
-        memset(buf, 0, sizeof(buf));
-        if(beg)
-        {
-            count = read_line(inpipefd[0], buf, BUFFLEN);
-        }
-        else
-        {
-            count = read(inpipefd[0], buf, BUFFLEN);
-        }
+        count = read(inpipefd[0], buf, BUFFLEN);
+        
         if (count == -1)
         {
             if (errno == EINTR)
@@ -334,6 +371,7 @@ void *handle(void *data)
                 break;
             }
         }
+
         else if (count == 0)
         {
             if(waitpid(pid, &status, WNOHANG) != 0)
@@ -344,34 +382,14 @@ void *handle(void *data)
         }
         else
         {
-            sub = buf;
-            if(beg)
-            {
-                if(!regex_match("^[a-zA-Z0-9\\-]+\\s*:\\s*.*$",buf,0,NULL))
-                {
-                    continue;
-                }
-                if(regex_match("\\s*Status\\s*:\\s+([0-9]{3}\\s+[a-zA-Z0-9 ]*)",buf,2,matches))
-                {
-                    memcpy(statusbuf, buf + matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
-                    sub = buf + matches[1].rm_eo + 2;
-                    count -= matches[1].rm_eo + 2;
-                    __t(cl, "HTTP/1.1 %s", statusbuf);
-                }
-                else
-                {
-                    const char* stat_str = get_status_str(200);
-                    __t(cl, "HTTP/1.1 %d %s", 200, stat_str);
-                }
-                beg = 0;
-            }
-            int cnt = antd_send(cl, sub, count);
+            int cnt = antd_send(cl, buf, count);
             if(cnt != count)
             {
                 ERROR("Cannot sent the entire data %d vs %d", cnt, count);
             }
         }
     }
+
     kill(pid, SIGKILL);
     //waitpid(pid, &status, 0);
     task = antd_create_task(NULL, data, NULL,rq->client->last_io);
