@@ -383,10 +383,10 @@ void *handle(void *data)
         else
         {
             int cnt = antd_send(cl, buf, count);
-            if(cnt != count)
+            /*if(cnt != count)
             {
                 ERROR("Cannot sent the entire data %d vs %d", cnt, count);
-            }
+            }*/
         }
     }
 
