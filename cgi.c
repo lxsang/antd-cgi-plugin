@@ -1,7 +1,12 @@
 #define PLUGIN_IMPLEMENT 1
+#include <string.h>
+#include <errno.h>
+#include <unistd.h>
 #include <sys/wait.h>
 #include <antd/plugin.h>
-#include "antd/ini.h"
+#include <antd/scheduler.h>
+#include <antd/ini.h>
+#include <ctype.h>
 
 #define MAX_ENV_SIZE 100
 
@@ -342,21 +347,6 @@ void *handle(void *data)
     // send out the rest of data
     while (1)
     {
-        /*FD_ZERO(&rfd);
-        FD_SET(inpipefd[0], &rfd);
-        timeout.tv_sec = 0;
-        timeout.tv_usec = 500;
-        count = select(inpipefd[0]+1, &rfd, NULL, NULL, &timeout);
-        if(count == 0)
-        {
-            continue;
-        }
-        if(count == -1)
-        {
-            ERROR("select: %s", strerror(errno));
-            break;
-        }*/
-        // there is data comming
         count = read(inpipefd[0], buf, BUFFLEN);
         
         if (count == -1)
@@ -382,11 +372,7 @@ void *handle(void *data)
         }
         else
         {
-            int cnt = antd_send(cl, buf, count);
-            /*if(cnt != count)
-            {
-                ERROR("Cannot sent the entire data %d vs %d", cnt, count);
-            }*/
+            UNUSED(antd_send(cl, buf, count));
         }
     }
 
