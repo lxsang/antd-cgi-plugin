@@ -358,7 +358,7 @@ void *handle(void *data)
     // send out the rest of data
     while (1)
     {
-        count = guard_read(inpipefd[0], buf, BUFFLEN);
+        count = read(inpipefd[0], buf, BUFFLEN);
 
         if (count == -1)
         {
