@@ -12,10 +12,10 @@
 
 dictionary_t cgi_bin = NULL;
 
-
-typedef struct {
+typedef struct
+{
     int size;
-    char* env[MAX_ENV_SIZE];
+    char *env[MAX_ENV_SIZE];
 } envar_arr_t;
 
 static int ini_handle(void *user_data, const char *section, const char *name,
@@ -58,11 +58,59 @@ void destroy()
         freedict(cgi_bin);
 }
 
+static int guard_read(int fd, void *buffer, size_t size)
+{
+    int n = 0;
+    int read_len;
+    int st;
+    while (n != (int)size)
+    {
+        read_len = (int)size - n;
+        st = read(fd, buffer + n, read_len);
+        if (st == -1)
+        {
+            ERROR("Unable to read from #%d: %s", fd, strerror(errno));
+            return -1;
+        }
+        if (st == 0)
+        {
+            ERROR("Endpoint %d is closed", fd);
+            return -1;
+        }
+        n += st;
+    }
+    return n;
+}
+
+static int guard_write(int fd, void *buffer, size_t size)
+{
+    int n = 0;
+    int write_len;
+    int st;
+    while (n != (int)size)
+    {
+        write_len = (int)size - n;
+        st = write(fd, buffer + n, write_len);
+        if (st == -1)
+        {
+            ERROR("Unable to write to #%d: %s", fd, strerror(errno));
+            return -1;
+        }
+        if (st == 0)
+        {
+            ERROR("Endpoint %d is closed", fd);
+            return -1;
+        }
+        n += st;
+    }
+    return n;
+}
+
 static void add_vars(envar_arr_t *l, char *k, char *v)
 {
     if (!v || !l || !k)
         return;
-    if(l->size >= MAX_ENV_SIZE-1)
+    if (l->size >= MAX_ENV_SIZE - 1)
         return;
     char *data = __s("%s=%s", k, v);
     l->env[l->size] = data;
@@ -73,6 +121,7 @@ static void add_vars(envar_arr_t *l, char *k, char *v)
 static void write_request_body(antd_request_t *rq, int fd)
 {
     char *tmp = (char *)dvalue(rq->request, "METHOD");
+    int ret;
     if (!tmp || EQU(tmp, "GET") || EQU(tmp, "HEAD"))
         return;
     int clen = -1;
@@ -93,9 +142,10 @@ static void write_request_body(antd_request_t *rq, int fd)
         {
             read += stat;
             readlen = (clen - read) > BUFFLEN ? BUFFLEN : (clen - read);
-            UNUSED(write(fd, buf, stat));
+            ret = guard_write(fd, buf, stat);
         }
     }
+    UNUSED(ret);
 }
 static char *get_cgi_bin(antd_request_t *rq)
 {
@@ -110,16 +160,16 @@ static char *get_cgi_bin(antd_request_t *rq)
     free(tmp);
     return bin;
 }
-static void get_env_vars(antd_request_t *rq, envar_arr_t* env_vars)
+static void get_env_vars(antd_request_t *rq, envar_arr_t *env_vars)
 {
     char *tmp = NULL;
     char *sub = NULL;
-    char* root;
+    char *root;
     dictionary_t request = (dictionary_t)rq->request;
     dictionary_t header = (dictionary_t)dvalue(rq->request, "REQUEST_HEADER");
     add_vars(env_vars, "GATEWAY_INTERFACE", "CGI/1.1");
     add_vars(env_vars, "SERVER_SOFTWARE", SERVER_NAME);
-    root = (char*)dvalue(header, "SERVER_WWW_ROOT");
+    root = (char *)dvalue(header, "SERVER_WWW_ROOT");
     tmp = (char *)dvalue(request, "REQUEST_QUERY");
     if (!tmp)
         add_vars(env_vars, "QUERY_STRING", "");
@@ -153,8 +203,9 @@ static void get_env_vars(antd_request_t *rq, envar_arr_t* env_vars)
     if (tmp)
     {
         sub = tmp;
-        while(*sub == '/') sub++;
-        if(sub)
+        while (*sub == '/')
+            sub++;
+        if (sub)
         {
             add_vars(env_vars, "PATH_INFO", sub);
         }
@@ -207,31 +258,30 @@ static void get_env_vars(antd_request_t *rq, envar_arr_t* env_vars)
     add_vars(env_vars, "REDIRECT_STATUS", "200");
 }
 
-
-int read_line(int fn, char*buf,int size)
+int read_line(int fn, char *buf, int size)
 {
-	int i = 0;
-	char c = '\0';
-	int n;
-	while ((i < size - 1) && (c != '\n'))
-	{
-		n = read(fn, &c,1);
-		if (n > 0)
-		{
-			//LOG("Data : %c\n", c);
-			buf[i] = c;
-			i++;
-		}
-		else
+    int i = 0;
+    char c = '\0';
+    int n;
+    while ((i < size - 1) && (c != '\n'))
+    {
+        n = read(fn, &c, 1);
+        if (n > 0)
         {
-            if(i == 0)
+            //LOG("Data : %c\n", c);
+            buf[i] = c;
+            i++;
+        }
+        else
+        {
+            if (i == 0)
                 i = n;
             c = '\n';
         }
-	}
-    if(i >= 0)
-	    buf[i] = '\0';
-	return i;
+    }
+    if (i >= 0)
+        buf[i] = '\0';
+    return i;
 }
 
 void *handle(void *data)
@@ -245,15 +295,23 @@ void *handle(void *data)
     antd_task_t *task = NULL;
     if (!bin || ws_enable(rq->request))
     {
-        LOG("No cgi bin found or connection is websocket");
-        antd_error(cl,503, "Service unavailable");
-        task = antd_create_task(NULL, data, NULL,rq->client->last_io);
-        task->priority++;
-        return task;
+        ERROR("No cgi bin found or connection is websocket");
+        antd_error(cl, 503, "Service unavailable");
+        return antd_create_task(NULL, data, NULL, rq->client->last_io);
     }
     // PIPE
-    UNUSED(pipe(inpipefd));
-    UNUSED(pipe(outpipefd));
+    if (pipe(inpipefd) == -1)
+    {
+        ERROR("Can not create inpipe: %s", strerror(errno));
+        antd_error(cl, 503, "Service unavailable");
+        return antd_create_task(NULL, data, NULL, rq->client->last_io);
+    }
+    if (pipe(outpipefd) == -1)
+    {
+        ERROR("Can not create outpipe: %s", strerror(errno));
+        antd_error(cl, 503, "Service unavailable");
+        return antd_create_task(NULL, data, NULL, rq->client->last_io);
+    }
     pid = fork();
     if (pid == 0)
     {
@@ -266,7 +324,7 @@ void *handle(void *data)
         LOG("Execute the cgi bin");
         envar_arr_t envs;
         envs.size = 0;
-        for(int i = 0; i < MAX_ENV_SIZE; i++)
+        for (int i = 0; i < MAX_ENV_SIZE; i++)
         {
             envs.env[i] = NULL;
         }
@@ -293,44 +351,44 @@ void *handle(void *data)
     regmatch_t matches[3];
     //fd_set rfd;
     //struct timeval timeout;
-	
+
     memset(buf, 0, sizeof(buf));
     antd_response_header_t rhd;
     rhd.header = dict();
     rhd.cookie = list_init();
     rhd.status = 200;
-    char* k;
-    char* v;
+    char *k;
+    char *v;
     int len;
     ssize_t count;
-   
-    while( read_line(inpipefd[0], buf, BUFFLEN) > 0 && strcmp(buf,"\r\n") != 0)
+
+    while (read_line(inpipefd[0], buf, BUFFLEN) > 0 && strcmp(buf, "\r\n") != 0)
     {
-        trim(buf,'\n');
-        trim(buf,'\r');
-        if(regex_match("\\s*Status\\s*:\\s+([0-9]{3})\\s+([a-zA-Z0-9 ]*)",buf,3,matches))
+        trim(buf, '\n');
+        trim(buf, '\r');
+        if (regex_match("\\s*Status\\s*:\\s+([0-9]{3})\\s+([a-zA-Z0-9 ]*)", buf, 3, matches))
         {
             len = matches[1].rm_eo - matches[1].rm_so;
-            k = (char*)malloc(len);
+            k = (char *)malloc(len);
             memset(k, 0, len);
             memcpy(k, buf + matches[1].rm_so, len);
             rhd.status = atoi(k);
             free(k);
         }
-        else if(regex_match("^([a-zA-Z0-9\\-]+)\\s*:\\s*(.*)$",buf,3,matches))
+        else if (regex_match("^([a-zA-Z0-9\\-]+)\\s*:\\s*(.*)$", buf, 3, matches))
         {
             len = matches[1].rm_eo - matches[1].rm_so;
-            k = (char*)malloc(len+1);
+            k = (char *)malloc(len + 1);
             memcpy(k, buf + matches[1].rm_so, len);
             k[len] = '\0';
             verify_header(k);
-            len = matches[2].rm_eo - matches[2].rm_so ;
-            v = (char*)malloc(len+1);
+            len = matches[2].rm_eo - matches[2].rm_so;
+            v = (char *)malloc(len + 1);
             memcpy(v, buf + matches[2].rm_so, len);
             v[len] = '\0';
-            if(strcmp(k,"Set-Cookie") == 0)
+            if (strcmp(k, "Set-Cookie") == 0)
             {
-                list_put_ptr(&rhd.cookie,v);
+                list_put_ptr(&rhd.cookie, v);
             }
             else
             {
@@ -347,8 +405,8 @@ void *handle(void *data)
     // send out the rest of data
     while (1)
     {
-        count = read(inpipefd[0], buf, BUFFLEN);
-        
+        count = guard_read(inpipefd[0], buf, BUFFLEN);
+
         if (count == -1)
         {
             if (errno == EINTR)
@@ -364,11 +422,11 @@ void *handle(void *data)
 
         else if (count == 0)
         {
-            if(waitpid(pid, &status, WNOHANG) != 0)
+            if (waitpid(pid, &status, WNOHANG) != 0)
             {
                 break;
             }
-           continue;
+            continue;
         }
         else
         {
@@ -378,7 +436,6 @@ void *handle(void *data)
 
     kill(pid, SIGKILL);
     //waitpid(pid, &status, 0);
-    task = antd_create_task(NULL, data, NULL,rq->client->last_io);
-    task->priority++;
+    task = antd_create_task(NULL, data, NULL, rq->client->last_io);
     return task;
 }
