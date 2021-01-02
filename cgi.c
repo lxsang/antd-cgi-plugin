@@ -6,6 +6,7 @@
 #include <antd/plugin.h>
 #include <antd/scheduler.h>
 #include <antd/ini.h>
+#include <antd/utils.h>
 #include <ctype.h>
 
 #define MAX_ENV_SIZE 100
@@ -56,54 +57,6 @@ void destroy()
 {
     if (cgi_bin)
         freedict(cgi_bin);
-}
-
-static int guard_read(int fd, void *buffer, size_t size)
-{
-    int n = 0;
-    int read_len;
-    int st;
-    while (n != (int)size)
-    {
-        read_len = (int)size - n;
-        st = read(fd, buffer + n, read_len);
-        if (st == -1)
-        {
-            ERROR("Unable to read from #%d: %s", fd, strerror(errno));
-            return -1;
-        }
-        if (st == 0)
-        {
-            ERROR("Endpoint %d is closed", fd);
-            return -1;
-        }
-        n += st;
-    }
-    return n;
-}
-
-static int guard_write(int fd, void *buffer, size_t size)
-{
-    int n = 0;
-    int write_len;
-    int st;
-    while (n != (int)size)
-    {
-        write_len = (int)size - n;
-        st = write(fd, buffer + n, write_len);
-        if (st == -1)
-        {
-            ERROR("Unable to write to #%d: %s", fd, strerror(errno));
-            return -1;
-        }
-        if (st == 0)
-        {
-            ERROR("Endpoint %d is closed", fd);
-            return -1;
-        }
-        n += st;
-    }
-    return n;
 }
 
 static void add_vars(envar_arr_t *l, char *k, char *v)
