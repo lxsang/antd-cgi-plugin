@@ -122,7 +122,7 @@ static void get_env_vars(antd_request_t *rq, envar_arr_t *env_vars)
     dictionary_t header = (dictionary_t)dvalue(rq->request, "REQUEST_HEADER");
     add_vars(env_vars, "GATEWAY_INTERFACE", "CGI/1.1");
     add_vars(env_vars, "SERVER_SOFTWARE", SERVER_NAME);
-    root = (char *)dvalue(header, "SERVER_WWW_ROOT");
+    root = (char *)dvalue(request, "SERVER_WWW_ROOT");
     tmp = (char *)dvalue(request, "REQUEST_QUERY");
     if (!tmp)
         add_vars(env_vars, "QUERY_STRING", "");
@@ -169,11 +169,11 @@ static void get_env_vars(antd_request_t *rq, envar_arr_t *env_vars)
     }
     else
         add_vars(env_vars, "PATH_INFO", "");
-    tmp = (char *)dvalue(header, "REMOTE_ADDR");
+    tmp = (char *)dvalue(request, "REMOTE_ADDR");
     add_vars(env_vars, "REMOTE_ADDR", tmp);
     add_vars(env_vars, "REMOTE_HOST", tmp);
     add_vars(env_vars, "SERVER_NAME", SERVER_NAME);
-    add_vars(env_vars, "SERVER_PORT", (char *)dvalue(header, "SERVER_PORT"));
+    add_vars(env_vars, "SERVER_PORT", (char *)dvalue(request, "SERVER_PORT"));
     add_vars(env_vars, "SERVER_PROTOCOL", "HTTP/1.1");
     // add remaining header to the vars
     chain_t it;
