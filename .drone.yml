@@ -20,7 +20,7 @@ steps:
   - aclocal
   - autoconf
   - automake --add-missing
-  - ./configure --prefix=/opt/cloud/artifacts/plugins
+  - ./configure --prefix=/opt/cloud/artifacts/plugins --enable-debug=yes
   - make
   - make install
 trigger:
