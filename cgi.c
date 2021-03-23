@@ -196,8 +196,8 @@ static void get_env_vars(antd_request_t *rq, envar_arr_t *env_vars)
     if (tmp)
     {
         add_vars(env_vars, "SCRIPT_NAME", tmp);
-        tmp = __s("%s/%s", root, tmp);
         add_vars(env_vars, "SCRIPT_FILENAME", tmp);
+        tmp = __s("%s/%s", root, tmp);
         add_vars(env_vars, "PATH_TRANSLATED", tmp);
         free(tmp);
     }
