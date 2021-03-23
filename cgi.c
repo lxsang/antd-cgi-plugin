@@ -8,6 +8,7 @@
 #include <antd/ini.h>
 #include <antd/utils.h>
 #include <ctype.h>
+#include <libgen.h>
 
 #define MAX_ENV_SIZE 100
 
@@ -195,7 +196,7 @@ static void get_env_vars(antd_request_t *rq, envar_arr_t *env_vars)
     tmp = (char *)dvalue(request, "RESOURCE_PATH");
     if (tmp)
     {
-        add_vars(env_vars, "SCRIPT_NAME", tmp);
+        add_vars(env_vars, "SCRIPT_NAME", basename(tmp));
         tmp = __s("%s/%s", root, tmp);
         add_vars(env_vars, "SCRIPT_FILENAME", tmp);
         add_vars(env_vars, "PATH_TRANSLATED", tmp);
