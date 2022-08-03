@@ -19,7 +19,7 @@ When all dependencies are installed, the build can be done with a few single com
 mkdir antd
 cd antd
 #replace x.x.x by the number version
-wget -O- https://get.bitdojo.dev/antd_plugin | bash -s "cgi-x.x.x"
+wget -O- https://get.iohub.dev/antd_plugin | bash -s "cgi-x.x.x"
 
 # or from the tarball distribution in dist/
 tar xvzf cgi-x.x.x.tar.gz
